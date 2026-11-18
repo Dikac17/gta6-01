@@ -2,18 +2,211 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>PALMERA BAY — Open World Crime</title>
+<link rel="icon" href="data:,">
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
-  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :root{
+    --ink:#fff7e8; --muted:#ffe9b0; --accent:#ffb703; --red:#ff4d4d; --blue:#29b6f6;
+    --panel:rgba(10,24,40,.72); --line:rgba(255,255,255,.25);
+    --font:system-ui,-apple-system,'Segoe UI',sans-serif;
+    --mono:ui-monospace,'SF Mono',Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:#7ec8f7;color:var(--ink);font-family:var(--font)}
+  #app,#app canvas{position:fixed;inset:0;display:block}
+  #hud{position:fixed;inset:0;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.85)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+
+  /* top-left: wanted + hp + money */
+  #topleft{position:fixed;left:14px;top:12px;display:flex;flex-direction:column;gap:6px}
+  #stars{font-size:26px;letter-spacing:2px;color:#ffd166;line-height:1}
+  #stars .off{color:rgba(255,255,255,.28)}
+  #hpwrap{width:210px}
+  #hpbar{height:10px;background:rgba(0,0,0,.55);border-radius:5px;overflow:hidden}
+  #hpfill{height:100%;width:100%;background:linear-gradient(90deg,#37e08b,#8bff6e)}
+  #hpfill.low{background:linear-gradient(90deg,#ff4d4d,#ff9a3d)}
+  #money{font-family:var(--mono);font-size:19px;color:#7dff9e}
+  #money b{color:var(--ink)}
+
+  /* top-center: objective + clock */
+  #topcenter{position:fixed;left:50%;top:12px;transform:translateX(-50%);text-align:center;max-width:46vw}
+  #mission-title{font-size:15px;font-weight:700;color:var(--accent);letter-spacing:.05em}
+  #objective{font-size:13px;margin-top:3px}
+  #obj-dist{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px}
+  #clock{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:4px}
+  #wanted-label{font-size:12px;color:#ffb3b3;font-weight:700;margin-top:2px;display:none}
+  #wanted-label.on{display:block}
+
+  /* top-right: speed + controls hint */
+  #topright{position:fixed;right:14px;top:12px;text-align:right}
+  #speed{font-family:var(--mono);font-size:30px;line-height:1}
+  #speed small{font-size:12px;color:var(--muted)}
+  #vehname{font-size:12px;color:var(--muted)}
+  #hint{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.6}
+
+  /* minimap bottom-right */
+  #minimap-wrap{position:fixed;right:14px;bottom:14px;width:200px;height:200px;border-radius:50%;overflow:hidden;
+    border:3px solid rgba(255,255,255,.55);box-shadow:0 4px 18px rgba(0,0,0,.5);background:#0b2a3d}
+  #minimap{width:100%;height:100%;display:block}
+  #compass{position:absolute;left:50%;top:6px;transform:translateX(-50%);font-family:var(--mono);font-size:11px;color:#fff}
+
+  /* bottom-left: toast + message */
+  #bottomleft{position:fixed;left:14px;bottom:14px;max-width:44vw}
+  #toast{font-size:15px;font-weight:700;color:var(--accent);min-height:22px}
+  #msg{font-size:13px;color:var(--ink);opacity:.9}
+  #interact{margin-top:8px;font-size:13px;background:rgba(255,183,3,.9);color:#231600;border-radius:6px;
+    padding:5px 10px;display:none;font-weight:700;text-shadow:none}
+  #interact.on{display:inline-block}
+
+  /* crosshair */
+  #crosshair{position:fixed;left:50%;top:50%;width:22px;height:22px;transform:translate(-50%,-50%);display:none}
+  #crosshair i{position:absolute;background:#fff;box-shadow:0 0 3px #000}
+  #crosshair i:nth-child(1){left:10px;top:0;width:2px;height:7px}
+  #crosshair i:nth-child(2){left:10px;bottom:0;width:2px;height:7px}
+  #crosshair i:nth-child(3){top:10px;left:0;height:2px;width:7px}
+  #crosshair i:nth-child(4){top:10px;right:0;height:2px;width:7px}
+
+  /* damage vignette + busted flash */
+  #dmg{position:fixed;inset:0;pointer-events:none;opacity:0;transition:opacity 120ms linear;
+    background:radial-gradient(ellipse at center,transparent 55%,rgba(255,30,30,.6) 100%)}
+  #fade{position:fixed;inset:0;pointer-events:none;opacity:0;background:#000;transition:opacity 400ms linear}
+
+  /* overlays: start / pause / end */
+  .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(180deg,rgba(6,40,66,.55),rgba(6,20,40,.82));z-index:10}
+  .card{max-width:640px;width:92vw;max-height:92vh;overflow:auto;background:rgba(8,28,48,.92);
+    border:1px solid rgba(255,183,3,.5);border-radius:16px;padding:28px 30px;text-align:center;
+    box-shadow:0 12px 50px rgba(0,0,0,.6)}
+  .card h1{margin:0 0 4px;font-size:44px;letter-spacing:.06em;color:var(--accent);line-height:1}
+  .card h1 span{color:#4dd0e1}
+  .card h2{margin:0 0 10px;font-size:26px;color:var(--accent)}
+  .card p{font-size:14px;line-height:1.65;color:#e8f4ff;margin:8px 0}
+  .card .sub{color:var(--muted);font-size:13px;letter-spacing:.14em;text-transform:uppercase}
+  .keys{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;text-align:left;font-size:13px;
+    margin:14px auto;max-width:460px}
+  .keys b{font-family:var(--mono);color:var(--accent);text-align:right}
+  .btn{display:inline-block;margin:8px 4px 0;padding:13px 30px;font-size:16px;font-weight:700;cursor:pointer;
+    border-radius:10px;border:0;background:var(--accent);color:#231600;pointer-events:auto}
+  .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  .btn:active{transform:scale(.97)}
+  #end-stats{font-family:var(--mono);font-size:14px;line-height:1.9;color:#d8f7d8}
+  .hidden{display:none !important}
+
+  /* touch controls */
+  #touch{position:fixed;inset:0;pointer-events:none;z-index:5;display:none}
+  body.touch #touch{display:block}
+  body.touch #hint{display:none}
+  #stick{position:absolute;left:22px;bottom:96px;width:124px;height:124px;border-radius:50%;
+    background:rgba(255,255,255,.10);border:2px solid rgba(255,255,255,.35);pointer-events:auto;touch-action:none}
+  #stick-knob{position:absolute;left:50%;top:50%;width:54px;height:54px;border-radius:50%;
+    background:rgba(255,183,3,.85);transform:translate(-50%,-50%)}
+  .tbtn{position:absolute;pointer-events:auto;touch-action:none;border-radius:50%;border:2px solid rgba(255,255,255,.4);
+    background:rgba(10,24,40,.6);color:#fff;font-weight:700;font-size:13px;text-align:center;
+    display:flex;align-items:center;justify-content:center;user-select:none;-webkit-user-select:none}
+  .tbtn.on{background:rgba(255,183,3,.85);color:#231600}
+  #btn-gas{right:26px;bottom:150px;width:78px;height:78px}
+  #btn-brake{right:116px;bottom:96px;width:70px;height:70px}
+  #btn-enter{right:26px;bottom:52px;width:64px;height:64px}
+  #btn-attack{right:112px;bottom:196px;width:64px;height:64px}
+  #btn-run{left:164px;bottom:110px;width:56px;height:56px}
+  #btn-pause{right:14px;top:96px;width:48px;height:48px;border-radius:10px}
+  #look-zone{position:absolute;right:0;top:0;width:55%;height:100%;pointer-events:auto;touch-action:none}
+  @media (max-width:700px){
+    #minimap-wrap{width:132px;height:132px}
+    #topcenter{max-width:56vw}
+    #hpwrap{width:150px}
+    .card h1{font-size:32px}
+  }
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
-<p id="status" role="status" aria-live="polite"></p>
+<div id="app"></div>
+<div id="hud">
+  <div id="topleft">
+    <div id="stars" aria-label="wanted level"></div>
+    <div id="hpwrap"><div id="hpbar"><div id="hpfill"></div></div></div>
+    <div id="money">$<b id="money-val">0</b></div>
+  </div>
+  <div id="topcenter">
+    <div id="mission-title">PALMERA BAY</div>
+    <div id="objective">Press ENTER to start</div>
+    <div id="obj-dist"></div>
+    <div id="wanted-label">POLICE ARE CHASING YOU — HIDE OR RUN!</div>
+    <div id="clock"></div>
+  </div>
+  <div id="topright">
+    <div id="speed">0 <small>km/h</small></div>
+    <div id="vehname"></div>
+    <div id="hint">WASD move &nbsp;·&nbsp; E enter/exit car<br>F attack &nbsp;·&nbsp; Q pistol/fists &nbsp;·&nbsp; Shift run<br>Space jump &nbsp;·&nbsp; T day/night &nbsp;·&nbsp; M sound<br>P / Esc pause &nbsp;·&nbsp; ← → camera</div>
+  </div>
+  <div id="minimap-wrap"><canvas id="minimap" width="400" height="400"></canvas><div id="compass">N</div></div>
+  <div id="bottomleft">
+    <div id="toast"></div>
+    <div id="msg"></div>
+    <div id="interact">E — ENTER CAR</div>
+  </div>
+  <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+</div>
+<div id="dmg"></div>
+<div id="fade"></div>
+
+<div id="touch">
+  <div id="look-zone"></div>
+  <div id="stick"><div id="stick-knob"></div></div>
+  <div class="tbtn" id="btn-gas">GAS</div>
+  <div class="tbtn" id="btn-brake">BRAKE</div>
+  <div class="tbtn" id="btn-enter">CAR</div>
+  <div class="tbtn" id="btn-attack">ATTACK</div>
+  <div class="tbtn" id="btn-run">RUN</div>
+  <div class="tbtn" id="btn-pause">II</div>
+</div>
+
+<div class="overlay" id="menu-start">
+  <div class="card">
+    <div class="sub">Open-world crime · browser</div>
+    <h1>PALMERA <span>BAY</span></h1>
+    <p>Welcome to <b>Palmera Bay</b> — a sunny coastal city full of cars,
+    pedestrians, and police. You are <b>Rico Marlin</b>, a freelance courier new in town.
+    Finish 3 missions for your new boss, <b>Mama Rosa</b>, and become a street legend.</p>
+    <div class="keys">
+      <b>W A S D</b><span>move / drive</span>
+      <b>Mouse / ← →</b><span>look around</span>
+      <b>E</b><span>enter / exit car (stealing a car raises wanted!)</span>
+      <b>F / click</b><span>attack — punch or shoot (Q switches weapon)</span>
+      <b>Shift</b><span>run &nbsp;·&nbsp; <b>Space</b> jump</span>
+      <b>T</b><span>day / night &nbsp;·&nbsp; <b>M</b> sound &nbsp;·&nbsp; <b>P</b> pause</span>
+    </div>
+    <p class="sub">Missions: deliver parcels → chase the rival courier → escape the police</p>
+    <button class="btn" id="btn-play">▶ START ADVENTURE</button>
+    <button class="btn ghost" id="btn-continue">Continue saved game</button>
+    <p class="sub" style="margin-top:14px">On phone: left joystick to move, drag right side for camera.</p>
+  </div>
+</div>
+
+<div class="overlay hidden" id="menu-pause">
+  <div class="card">
+    <h2>PAUSED</h2>
+    <p id="pause-stats"></p>
+    <button class="btn" id="btn-resume">Resume</button>
+    <button class="btn ghost" id="btn-restart">Restart</button>
+    <button class="btn ghost" id="btn-quit-menu">Main menu</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="menu-end">
+  <div class="card">
+    <h2 id="end-title">GAME OVER</h2>
+    <p id="end-text"></p>
+    <div id="end-stats"></div>
+    <button class="btn" id="btn-again">Play again</button>
+    <button class="btn ghost" id="btn-end-menu">Main menu</button>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.min.js" } }
+</script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
